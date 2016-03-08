@@ -1,5 +1,5 @@
 wheel>=0.26.0
-flotils>=0.2.14b0,<0.2.16
+flotils>=0.3.0a0,<0.3.1
 python-dateutil>=2.5.0,<2.6
 beautifulsoup4>=4.4.1,<4.5
 chardet>=2.3.0,<2.4
