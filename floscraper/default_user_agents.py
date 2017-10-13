@@ -5,10 +5,10 @@ Module of default web browser user agents
 
 __author__ = "the01"
 __email__ = "jungflor@gmail.com"
-__copyright__ = "Copyright (C) 2015-16, Florian JUNG"
+__copyright__ = "Copyright (C) 2015-17, Florian JUNG"
 __license__ = "MIT"
 __version__ = "0.1.1"
-__date__ = "2016-01-07"
+__date__ = "2017-10-06"
 # Created: 2014-09-21 04:29
 
 # preconfigured user agents

@@ -2,54 +2,33 @@
 """
 Module for loading/scraping data from the web
 """
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
 
 __author__ = "the01"
 __email__ = "jungflor@gmail.com"
-__copyright__ = "Copyright (C) 2014-16, Florian JUNG"
+__copyright__ = "Copyright (C) 2014-17, Florian JUNG"
 __license__ = "MIT"
-__version__ = "0.1.7"
-__date__ = "2016-03-08"
+__version__ = "0.1.8"
+__date__ = "2017-10-06"
 # Created: 2014-04-02 11:23
 
-import os
 import re
-import datetime
-import threading
-import hashlib
 import socket
 
-from dateutil.tz import tzutc
-import codecs
 from bs4 import BeautifulSoup
 import html2text
 import requests
 from requests import HTTPError
 from requests.exceptions import SSLError, Timeout, ConnectionError
 
-try:
-    import portalocker as porta
-except ImportError as e:
-    # not using portalocker
-    porta = None
-
 from flotils.loadable import Loadable
-from flotils.logable import ModuleLogable
 
-from default_user_agents import default_user_agents
-
-
-class Logger(ModuleLogable):
-    pass
-
-
-logger = Logger()
-UTC = tzutc()
-_cache = {}
-""" temp cache """
-_cache_lock = threading.RLock()
-
-if porta is None:
-    logger.warning("Not using portalocker")
+from .default_user_agents import default_user_agents
+from .models import Response, CacheInfo
+from .cache import FileCache, NullCache
 
 
 class WEBParameterException(Exception):
@@ -82,59 +61,52 @@ class WebScraper(Loadable):
             settings = {}
         super(WebScraper, self).__init__(settings)
 
-        self._url = settings.get('url', None)
-        self._scheme = settings.get('scheme', None)
-        self._timeout = settings.get('timeout', None)
-        self._cacheDir = settings.get('cache_directory', None)
-        self._cacheIndex = None
-        with _cache_lock:
-            self._cacheIndex = _cache
+        self.url = settings.get('url', None)
+        self.scheme = settings.get('scheme', None)
+        self.timeout = settings.get('timeout', None)
 
-        self._cacheTime = datetime.timedelta(
-            seconds=settings.get('cache_time', 7 * 60)
-        )
-        self._cacheUseAdvanced = settings.get('cache_use_advanced', True)
+        cache_sett = settings.get('cache')
+        self.cache = NullCache()
+        """ :type : None | floscraper.cache.Cache """
+        if cache_sett:
+            self.cache = FileCache(cache_sett)
 
-        self._authMethod = settings.get('auth_method', None)
-        self._authUsername = settings.get('auth_username', None)
-        self._authPassword = settings.get('auth_password', None)
+        self._auth_method = settings.get('auth_method', None)
+        self._auth_username = settings.get('auth_username', None)
+        self._auth_password = settings.get('auth_password', None)
 
-        # TODO: needs to be done outside?
-        if self._cacheDir:
-            self._cacheDir = self.joinPathPrefix(self._cacheDir)
-
-        self._br = None
+        self.session = None
         """ object to do http actions
-            :type _br: request.Session """
-        self._brHandleRedirect = settings.get('handle_redirect', True)
+            :type _br: requests.Session """
+        self._handle_redirect = settings.get('handle_redirect', True)
 
-        agentBrowser = default_user_agents['browser']['keith']
-        agentOS = default_user_agents['os']['linux_i686']
+        agent_browser = default_user_agents['browser']['keith']
+        agent_os = default_user_agents['os']['linux_i686']
         agent = settings.get('user_agent', None)
 
         if "default_user_agents_browser" in settings:
             brow = settings['default_user_agents_browser']
-            agentBrowser = default_user_agents['browser'].get(brow, None)
+            agent_browser = default_user_agents['browser'].get(brow, None)
         if "default_user_agents_os" in settings:
             os = settings['default_user_agents_os']
-            agentOS = default_user_agents['os'].get(os, None)
+            agent_os = default_user_agents['os'].get(os, None)
         if "user_agent_browser" in settings:
-            agentBrowser = settings['user_agent_browser']
+            agent_browser = settings['user_agent_browser']
         if "user_agent_os" in settings:
-            agentOS = settings['user_agent_os']
+            agent_os = settings['user_agent_os']
 
         if not agent:
-            if agentBrowser and agentOS:
-                agent = agentBrowser.format(agentOS)
-        self._brUserAgent = agent
+            if agent_browser and agent_os:
+                agent = agent_browser.format(agent_os)
+        self.user_agent = agent
         self._text_maker = None
         """ object to translate html to markdown (html2text)
-            :type _text_maker: None | html2text.HTML2Text """
+            :type : None | html2text.HTML2Text """
         if settings.get('html2text'):
             self._set_html2text(settings['html2text'])
-        self._html_parser = settings.get('html_parser', "html.parser")
+        self.html_parser = settings.get('html_parser', "html.parser")
         """ what html parser to use (default: html.parser - built in)
-            :type _html_parser: str """
+            :type : str | unicode """
 
     def _browser_init(self):
         """
@@ -142,19 +114,19 @@ class WebScraper(Loadable):
 
         :rtype: None
         """
-        if self._br:
+        if self.session:
             return
 
-        self._br = requests.Session()
+        self.session = requests.Session()
         headers = {}
 
-        if self._brUserAgent:
-            headers['User-agent'] = self._brUserAgent
-        self._br.headers.update(headers)
+        if self.user_agent:
+            headers['User-agent'] = self.user_agent
+        self.session.headers.update(headers)
 
-        if self._authMethod in [None, "", "HTTPBasicAuth"]:
-            if self._authUsername is not None:
-                self._br.auth = (self._authUsername, self._authPassword)
+        if self._auth_method in [None, "", "HTTPBasicAuth"]:
+            if self._auth_username is not None:
+                self.session.auth = (self._auth_username, self._auth_password)
 
     def _set_html2text(self, settings):
         """
@@ -171,12 +143,13 @@ class WebScraper(Loadable):
         for param in settings:
             if not hasattr(self._text_maker, param):
                 raise WEBParameterException(
-                    u"Setting html2text failed - "
-                    u"unknown parameter {}".format(param)
+                    "Setting html2text failed - unknown parameter {}".format(
+                        param
+                    )
                 )
             setattr(self._text_maker, param, settings[param])
 
-    def loadScrap(self, path):
+    def load_scrap(self, path):
         """
         Load scraper settings from file
 
@@ -187,11 +160,11 @@ class WebScraper(Loadable):
         :raises WEBParameterException: Missing parameters in file
         """
         try:
-            conf = self._loadJSONFile(path)
-        except Exception:
-            # should only be IOError
+            conf = self.load_settings(path)
+        except:
+            # Should only be IOError
             self.exception("Failed to load file")
-            raise WEBFileException(u"Failed to load from {}".format(path))
+            raise WEBFileException("Failed to load from {}".format(path))
 
         if "scheme" not in conf:
             raise WEBParameterException("Missing scheme definition")
@@ -200,177 +173,15 @@ class WebScraper(Loadable):
         version = conf.get('version', None)
         if version != "1.0":
             raise WEBParameterException(
-                u"Unsupported version {}".format(version)
+                "Unsupported version {}".format(version)
             )
-        self._scheme = conf['scheme']
-        self._url = conf['url']
-        self._timeout = conf.get('timeout', self._timeout)
-        if "cache_directory" in conf:
-            self._cacheDir = conf['cache_directory']
-        if "cache_time" in conf:
-            self._cacheTime = conf['cache_time']
-        if self._cacheTime and not isinstance(
-                self._cacheTime, datetime.timedelta):
-            self._cacheTime = datetime.timedelta(seconds=self._cacheTime)
+        self.scheme = conf['scheme']
+        self.url = conf['url']
+        self.timeout = conf.get('timeout', self.timeout)
         if conf.get('html2text'):
             self._set_html2text(conf['html2text'])
 
-    def _getCached(self, url, ignoreAccessTime=False):
-        """
-        Try to retrieve url from cache if available
-
-        :param url: Url to retrieve
-        :type url: str
-        :param ignoreAccessTime: Should ignore the access time
-        :type ignoreAccessTime: bool
-        :return: (data, Accessed Time, ETag)
-            None, None, None -> not found in cache
-            None, Accessed Time, ETag -> found, but is expired
-            data, Accessed Time, ETag -> found in cache
-        :rtype: (None | str, None | datetime.datetime, None | str)
-        """
-        if not self._cacheDir:
-            self.debug(u"From inet {}".format(url))
-            return None, None, None
-
-        if not self._cacheIndex:
-            try:
-                with open(
-                        os.path.join(self._cacheDir, "cache_index.tmp"),
-                        'rb'
-                ) as f:
-                    if porta:
-                        porta.lock(f, porta.LOCK_EX)
-                    self._cacheIndex = self._loadJSONFile(
-                        os.path.join(self._cacheDir, "cache_index.tmp")
-                    )
-            except IOError as e:
-                if str(e) != "Decoding json failed":
-                    self.exception("Failed to load cache file")
-            except:
-                self.exception("Failed to load cache file")
-
-        if not self._cacheIndex:
-            self._cacheIndex = {'version': "1.0"}
-
-        key = hashlib.md5(url).hexdigest()
-        with _cache_lock:
-            _cache.update(self._cacheIndex)
-            accessed = _cache.get(key, None)
-        eTag = None
-
-        if not accessed:
-            # not previously cached
-            self.debug(u"From inet {}".format(url))
-            return None, None, None
-
-        if isinstance(accessed, dict):
-            eTag = accessed['ETag']
-            accessed = accessed['accessTime']
-        now = datetime.datetime.utcnow().replace(tzinfo=UTC)
-        if now - accessed > self._cacheTime and not ignoreAccessTime:
-            # cached expired -> remove
-            # del self._cacheIndex[key]
-            # try:
-            #    os.remove(os.path.join(self._cacheDir, key + ".tmp"))
-            # except Exception:
-            #    pass
-            self.debug(u"From inet (expired) {}".format(url))
-            return None, accessed, eTag
-
-        res = None
-
-        try:
-            with codecs.open(
-                    os.path.join(self._cacheDir, key + ".tmp"),
-                    "rb", "utf-8") as f:
-                if porta:
-                    porta.lock(f, porta.LOCK_EX)
-                res = f.read()
-        except:
-            self.exception("Failed to read cached file")
-            self.debug(u"From inet (failure) {}".format(url))
-            return None, None, None
-        self.debug(u"From cache {}".format(url))
-        return res, accessed, eTag
-
-    def _updateCache(self, url, accessTime=None, eTag=None):
-        """
-        Update cache information for url
-
-        :param url: Update for this url
-        :type url: str
-        :param accessTime: Time of last access (default: None)
-            if None -> use current time
-        :type accessTime: None | datetime.datetime
-        :param eTag: ETag information (default: None)
-        :type eTag: None | str
-        :rtype: None
-        """
-        key = hashlib.md5(url).hexdigest()
-        if not accessTime:
-            accessTime = datetime.datetime.utcnow().replace(tzinfo=UTC)
-        cache_dict = accessTime
-        if eTag is not None:
-            cache_dict = {
-                'accessTime': accessTime,
-                'ETag': eTag
-            }
-        self._cacheIndex[key] = cache_dict
-        with _cache_lock:
-            _cache[key] = cache_dict
-
-    def _putCached(self, url, html, eTag=None):
-        """
-        Put response into cache
-
-        :param url: Url to cache
-        :type url: str
-        :param html: HTML content of url
-        :type html: str
-        :param eTag: ETag information (default: None)
-        :type eTag: None | str
-        :rtype: None
-        """
-        if not self._cacheDir or not html:
-            return
-        key = hashlib.md5(url).hexdigest()
-
-        try:
-            with codecs.open(
-                    os.path.join(self._cacheDir, key + ".tmp"),
-                    "wb",
-                    "utf-8") as f:
-                if porta:
-                    porta.lock(f, porta.LOCK_EX)
-                f.write(html)
-                # try flushing to make data available sooner
-                # (try to get rid of erroneous reads)
-                f.flush()
-        except:
-            self.exception("Failed to write cached file")
-            return
-        self._updateCache(url, eTag=eTag)
-
-        # better in a close statement?
-        try:
-            with open(
-                os.path.join(self._cacheDir, "cache_index.tmp"),
-                "wb"
-            ) as f, _cache_lock:
-                if porta:
-                    porta.lock(f, porta.LOCK_EX)
-                self._saveJSONFile(
-                    os.path.join(self._cacheDir, "cache_index.tmp"),
-                    _cache
-                )
-                # try flushing to make data available sooner
-                # (try to get rid of erroneous reads)
-                f.flush()
-        except:
-            self.exception("Failed to save cache")
-
-    def _request(
+    def request(
             self, method, url, timeout=None,
             headers=None, data=None, params=None
     ):
@@ -378,9 +189,9 @@ class WebScraper(Loadable):
         Make a request using the requests library
 
         :param method: Which http method to use (GET/POST)
-        :type method: str
+        :type method: str | unicode
         :param url: Url to make request to
-        :type url: str
+        :type url: str | unicode
         :param timeout: Timeout for request (default: None)
             None -> infinite timeout
         :type timeout: None | int | float
@@ -398,31 +209,31 @@ class WebScraper(Loadable):
         """
         if headers is None:
             headers = {}
-        if not self._br:
+        if not self.session:
             self._browser_init()
 
         try:
-            response = self._br.request(
+            response = self.session.request(
                 method,
                 url,
                 timeout=timeout,
-                allow_redirects=self._brHandleRedirect,
+                allow_redirects=self._handle_redirect,
                 headers=headers,
                 data=data,
                 params=params
             )
         except SSLError as e:
-            raise WEBConnectException(u"{}".format(e))
+            raise WEBConnectException(e)
         except HTTPError:
-            raise WEBConnectException(u"Unable to load {}".format(url))
+            raise WEBConnectException("Unable to load {}".format(url))
         except (Timeout, socket.timeout):
-            raise WEBConnectException(u"Timeout loading {}".format(url))
+            raise WEBConnectException("Timeout loading {}".format(url))
         except ConnectionError:
-            raise WEBConnectException(u"Failed to load {}".format(url))
+            raise WEBConnectException("Failed to load {}".format(url))
         except Exception:
-            self.exception(u"Failed to load {}".format(url))
+            self.exception("Failed to load {}".format(url))
             raise WEBConnectException(
-                u"Unknown failure loading {}".format(url)
+                "Unknown failure loading {}".format(url)
             )
         return response
 
@@ -431,33 +242,33 @@ class WebScraper(Loadable):
         Make GET request
 
         :param url: Url to make the request to
-        :type url: str
+        :type url: str | unicode
         :param kwargs: See _requests for parameters
-        :type kwargs: dict
+        :type kwargs:
         :return: Response
         :rtype: requests.Response
         """
-        return self._request("GET", url, **kwargs)
+        return self.request("GET", url, **kwargs)
 
     def _post(self, url, **kwargs):
         """
         Make POST request
 
         :param url: Url to make the request to
-        :type url: str
+        :type url: str | unicode
         :param kwargs: See _requests for parameters
         :type kwargs: dict
         :return: Response
         :rtype: requests.Response
         """
-        return self._request("POST", url, **kwargs)
+        return self.request("POST", url, **kwargs)
 
-    def get(self, url, timeout=None, headers=None, params=None):
+    def get(self, url, timeout=None, headers=None, params=None, cache_ext=None):
         """
         Make get request to url (might use cache)
 
         :param url: Url to make request to
-        :type url: str
+        :type url: str | unicode
         :param timeout: Timeout for request (default: None)
             None -> infinite timeout
         :type timeout: None | int | float
@@ -465,29 +276,39 @@ class WebScraper(Loadable):
         :type headers: None | dict
         :param params: Parameters to be passed along with url (default: None)
         :type params: None | dict
-        :return: Html response
-        :rtype: str
+        :param cache_ext: External cache info
+        :type cache_ext: floscraper.models.CacheInfo
+        :return: Response
+        :rtype: floscraper.models.Response | None
         :raises WEBConnectException: Loading failed
         """
         if headers is None:
             headers = {}
-        cached, accessed_time, etag = self._getCached(url)
+        cached = cache_info = None
+        if self.cache:
+            cached, cache_info = self.cache.get(url)
 
+        if cache_ext:
+            # Check local cache
+            if not cache_info:
+                cache_info = cache_ext
+            if cache_info.access_time and cache_ext.access_time:
+                if cache_info.access_time < cache_ext.access_time:
+                    cached = None
+                    cache_info = cache_ext
+            if cache_info.etag != cache_ext.etag:
+                cached = None
+                cache_info = cache_ext
         if cached:
             # Using cached
-            return cached
+            return Response(cached, cache_info)
         # Not using cached
 
-        if not self._br:
+        if not self.session:
             self._browser_init()
 
-        if self._cacheUseAdvanced:
-            if accessed_time and "If-Modified-Since" not in headers.keys():
-                headers['If-Modified-Since'] = accessed_time.strftime(
-                    "%a, %d %b %Y %H:%M:%S GMT"
-                )
-            if etag and "If-None-Match" not in headers.keys():
-                headers['If-None-Match'] = etag
+        if self.cache:
+            headers = self.cache.prepare_headers(headers, cache_info)
 
         response = self._get(
             url,
@@ -495,7 +316,12 @@ class WebScraper(Loadable):
             headers=headers,
             params=params
         )
-        etag = response.headers.get('etag', etag)
+        if "etag" in response.headers:
+            if not cache_info:
+                cache_info = CacheInfo()
+            cache_info.etag = response.headers.get('etag')
+
+        res = Response(cache_info=cache_info)
 
         if response.history:
             # list of responses in redirects
@@ -504,30 +330,32 @@ class WebScraper(Loadable):
             for resp in response.history + [None]:
                 if resp is None:
                     resp = response
-                if code in [requests.codes.found,
-                            requests.codes.see_other,
-                            requests.codes.temporary_redirect
-                            ]:
-                    self.info(
-                        u"Temporary redirect to {}".format(resp.url)
-                    )
-                elif code in [requests.codes.moved_permanently,
-                              requests.codes.permanent_redirect]:
-                    self.warning(u"Moved to {}".format(resp.url))
+                if code in [
+                    requests.codes.FOUND,
+                    requests.codes.SEE_OTHER,
+                    requests.codes.TEMPORARY_REDIRECT
+                ]:
+                    self.info("Temporary redirect to {}".format(resp.url))
+                elif code in [
+                    requests.codes.MOVED_PERMANENTLY,
+                    requests.codes.PERMANENT_REDIRECT
+                ]:
+                    self.warning("Moved to {}".format(resp.url))
                 elif code != 0:
-                    self.error(u"Code {} to {}".format(code, resp.url))
+                    self.error("Code {} to {}".format(code, resp.url))
                 code = resp.status_code
 
-        if response.status_code == requests.codes.not_modified:
-            self.info(u"Not modified {}".format(url))
-            cached, _, _ = self._getCached(url, ignoreAccessTime=True)
-            self._updateCache(url, eTag=etag)
-            return cached
+        if response.status_code == requests.codes.NOT_MODIFIED:
+            self.info("Not modified {}".format(url))
+            res.html, _ = self.cache.get(url, ignore_access_time=True)
+            if self.cache:
+                self.cache.update(url, cache_info)
+            return res
 
         try:
             response.raise_for_status()
         except HTTPError as e:
-            raise WEBConnectException(u"{} - {}".format(e, url))
+            raise WEBConnectException("{} - {}".format(e, url))
 
         try:
             html = response.text
@@ -535,30 +363,32 @@ class WebScraper(Loadable):
                 self.warning("Response returned None")
                 raise Exception()
         except Exception:
-            raise WEBConnectException(u"Unable to load {}".format(url))
+            raise WEBConnectException("Unable to load {}".format(url))
 
-        self._putCached(url, html, eTag=etag)
+        if self.cache:
+            self.cache.put(url, html, cache_info)
         if url != response.url:
             if not response.history:
                 self.warning(
-                    u"Response url different despite no redirects "
-                    u"{} - {}".format(url, response.url))
-            self._putCached(response.url, html, eTag=etag)
-        return html
+                    "Response url different despite no redirects "
+                    "{} - {}".format(url, response.url)
+                )
+            if self.cache:
+                self.cache.put(response.url, html, cache_info)
+        res.html = html
+        return res
 
-    def _getTagMatch(self, ele, tree):
+    def _get_tag_match(self, ele, tree):
         """
         Match tag
 
         :param ele:
         :type ele:
         :param tree:
-        :type tree:
+        :type tree: None, list
         :return:
         :rtype: None | list
         """
-        # self.debug(u"ele={}".format(ele.name))
-
         if tree in [None, []]:
             return [ele]
 
@@ -597,7 +427,7 @@ class WebScraper(Loadable):
 
         if "[]" in t:
             try:
-                possibles = eval(u"possibles[{}]".format(t["[]"]))
+                possibles = eval("possibles[{}]".format(t["[]"]))
             except:
                 # no possibles
                 return None
@@ -606,7 +436,7 @@ class WebScraper(Loadable):
             possibles = [possibles]
 
         for a in possibles:
-            match = self._getTagMatch(a, branch)
+            match = self._get_tag_match(a, branch)
 
             if match:
                 res.extend(match)
@@ -616,28 +446,37 @@ class WebScraper(Loadable):
         else:
             return res
 
-    def _parseValue(self, eles, valueScheme):
+    def _parse_value(self, eles, value_scheme):
+        """
+
+        :param eles:
+        :type eles: list
+        :param value_scheme:
+        :type value_scheme: dict
+        :return:
+        :rtype: list
+        """
         val = []
-        valType = valueScheme.get('type', None)
-        reg = valueScheme.get('reg', None)
-        strip = valueScheme.get('strip', False)
+        val_type = value_scheme.get('type', None)
+        reg = value_scheme.get('reg', None)
+        strip = value_scheme.get('strip', False)
 
         for match in eles:
-            if valType == "text":
+            if val_type == "text":
                 val.append(unicode(match.getText()))
-            elif valType == "content":
+            elif val_type == "content":
                 val.append(unicode(match.getText()))
-            elif valType == "attribute" and valueScheme.get("attribute", None):
-                attr = valueScheme['attribute']
+            elif val_type == "attribute" and value_scheme.get("attribute", None):
+                attr = value_scheme['attribute']
 
                 if attr in match.attrs:
                     res = match[attr]
 
                     # multi-valued attributes will be joined in one string
                     if isinstance(res, list):
-                        res = u" ".join(res)
+                        res = " ".join(res)
                     val.append(res)
-            elif valType == "html":
+            elif val_type == "html":
                 val.append(unicode(match))
             else:
                 # == html2text
@@ -657,24 +496,31 @@ class WebScraper(Loadable):
                     if reg.get('type', None) == "reg":
                         reg = re.compile(reg['reg'])
                 res.extend(reg.findall(a))
-                # self.debug(u"'{}' - {}".format(a, res))
         else:
             res = val
 
         return res
 
-    def _parseScheme(self, ele, scheme):
+    def _parse_scheme(self, ele, scheme):
+        """
+
+        :param ele:
+        :type ele:
+        :param scheme:
+        :type scheme: dict[str |unicode, dict]
+        :return:
+        :rtype: dict
+        """
         res = {}
 
         for aKey in scheme:
-            # self.debug(u"{}".format(aKey))
             entity = scheme[aKey]
             val = []
             matches = []
             res[aKey] = []
 
             if "tree" in entity:
-                matches = self._getTagMatch(ele, entity['tree'])
+                matches = self._get_tag_match(ele, entity['tree'])
 
                 if not matches:
                     matches = []
@@ -685,19 +531,19 @@ class WebScraper(Loadable):
                 pass
 
             if not matches and "value" == aKey:
-                val.extend(self._parseValue([ele], entity))
+                val.extend(self._parse_value([ele], entity))
                 res[aKey].extend(val)
 
             if "value" == aKey:
                 for a in matches:
                     # TODO: sure it's ele and not a?
-                    val.extend(self._parseValue([ele], entity))
+                    val.extend(self._parse_value([ele], entity))
             if "children" in entity:
                 for a in matches:
                     obj = {}
                     if "value" == aKey:
                         obj['value'] = val
-                    child = self._parseScheme(a, entity['children'])
+                    child = self._parse_scheme(a, entity['children'])
 
                     if child:
                         obj.update(child)
@@ -705,7 +551,10 @@ class WebScraper(Loadable):
                         res[aKey].append(obj)
         return res
 
-    def scrap(self, url=None, scheme=None, timeout=None):
+    def scrap(self,
+              url=None, scheme=None, timeout=None,
+              html_parser=None, cache_ext=None
+    ):
         """
         Scrap a url and parse the content according to scheme
 
@@ -715,58 +564,85 @@ class WebScraper(Loadable):
         :type scheme: dict
         :param timeout: Timeout for http operation (default: self._timout)
         :type timeout: float
-        :return: Parsed data from url
-        :rtype: dict
+        :param html_parser: What html parser to use (default: self._html_parser)
+        :type html_parser: str | unicode
+        :param cache_ext: External cache info
+        :type cache_ext: floscraper.models.CacheInfo
+        :return: Response data from url and parsed info
+        :rtype: floscraper.models.Response
         :raises WEBConnectException: HTTP get failed
         :raises WEBParameterException: Missing scheme or url
         """
         if not url:
-            url = self._url
+            url = self.url
         if not scheme:
-            scheme = self._scheme
+            scheme = self.scheme
         if not timeout:
-            timeout = self._timeout
+            timeout = self.timeout
+        if not html_parser:
+            html_parser = self.html_parser
         if not scheme:
             raise WEBParameterException("Missing scheme definition")
         if not url:
             raise WEBParameterException("Missing url definition")
-        htmlSite = self.get(url, timeout)
-        soup = BeautifulSoup(htmlSite, self._html_parser)
-        res = self._parseScheme(soup, scheme)
-        return res
+        resp = self.get(url, timeout, cache_ext=cache_ext)
+        soup = BeautifulSoup(resp.html, html_parser)
+        resp.scraped = self._parse_scheme(soup, scheme)
+        return resp
 
-    def shrinkList(self, shrink):
-        if not isinstance(shrink, list):
-            if isinstance(shrink, dict):
-                return self.shrinkDict(shrink)
-            return shrink
+    def _shrink_list(self, shrink):
+        """
+        Shrink list down to essentials
 
+        :param shrink: List to shrink
+        :type shrink: list
+        :return: Shrunk list
+        :rtype: list
+        """
         res = []
 
         if len(shrink) == 1:
-            return self.shrinkDict(shrink[0])
+            return self.shrink(shrink[0])
         else:
             for a in shrink:
-                temp = self.shrinkDict(a)
+                temp = self.shrink(a)
 
                 if temp:
                     res.append(temp)
         return res
 
-    def shrinkDict(self, shrink):
-        if not isinstance(shrink, dict):
-            if isinstance(shrink, list):
-                return self.shrinkList(shrink)
-            return shrink
+    def _shrink_dict(self, shrink):
+        """
+        Shrink dict down to essentials
 
+        :param shrink: Dict to shrink
+        :type shrink: dict
+        :return: Shrunk dict
+        :rtype: dict
+        """
         res = {}
 
         if len(shrink.keys()) == 1 and "value" in shrink:
-            return self.shrinkList(shrink['value'])
+            return self.shrink(shrink['value'])
         else:
             for a in shrink:
-                res[a] = self.shrinkList(shrink[a])
+                res[a] = self.shrink(shrink[a])
 
                 if not res[a]:
                     del res[a]
         return res
+
+    def shrink(self, shrink):
+        """
+        Remove unnecessary parts
+
+        :param shrink: Object to shringk
+        :type shrink: dict | list
+        :return: Shrunk object
+        :rtype: dict | list
+        """
+        if isinstance(shrink, list):
+            return self._shrink_list(shrink)
+        if isinstance(shrink, dict):
+            return self._shrink_dict(shrink)
+        return shrink
