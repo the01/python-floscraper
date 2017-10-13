@@ -2,6 +2,12 @@
 # -*- coding: UTF-8 -*-
 
 from setuptools import setup
+import os
+import sys
+
+
+if sys.argv[-1] == "build":
+    os.system("python setup.py clean sdist bdist bdist_egg bdist_wheel")
 
 
 def get_version():
