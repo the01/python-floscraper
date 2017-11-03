@@ -11,8 +11,8 @@ __author__ = "the01"
 __email__ = "jungflor@gmail.com"
 __copyright__ = "Copyright (C) 2014-17, Florian JUNG"
 __license__ = "MIT"
-__version__ = "0.1.8"
-__date__ = "2017-10-06"
+__version__ = "0.1.9"
+__date__ = "2017-11-03"
 # Created: 2014-04-02 11:23
 
 import re
@@ -285,6 +285,7 @@ class WebScraper(Loadable):
         if headers is None:
             headers = {}
         cached = cache_info = None
+        # TODO: add params to caching key
         if self.cache:
             cached, cache_info = self.cache.get(url)
 
@@ -358,13 +359,18 @@ class WebScraper(Loadable):
             raise WEBConnectException("{} - {}".format(e, url))
 
         try:
+            raw = response.content
             html = response.text
-            if html is None:
+            if raw is None:
                 self.warning("Response returned None")
+                raise Exception()
+            if html is None:
+                self.warning("Response parsed returned None")
                 raise Exception()
         except Exception:
             raise WEBConnectException("Unable to load {}".format(url))
 
+        # TODO: cache raw / whole response object
         if self.cache:
             self.cache.put(url, html, cache_info)
         if url != response.url:
@@ -376,6 +382,7 @@ class WebScraper(Loadable):
             if self.cache:
                 self.cache.put(response.url, html, cache_info)
         res.html = html
+        res.raw = raw
         return res
 
     def _get_tag_match(self, ele, tree):

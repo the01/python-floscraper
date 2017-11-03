@@ -9,7 +9,7 @@ __email__ = "jungflor@gmail.com"
 __copyright__ = "Copyright (C) 2017, Florian JUNG"
 __license__ = "MIT"
 __version__ = "0.1.0"
-__date__ = "2017-10-06"
+__date__ = "2017-11-03"
 # Created: 2017-10-06 23:35
 
 
@@ -67,24 +67,29 @@ class CacheInfo(object):
 class Response(object):
     """ Scrapper response object """
 
-    def __init__(self, html=None, cache_info=None, scraped=None):
+    def __init__(self, html=None, cache_info=None, scraped=None, raw=None):
         super(Response, self).__init__()
         self.cache_info = cache_info
         """ :type : None | CacheInfo """
+        self.raw = raw
+        """ Raw, undecoded reponse
+            :type : None | unicode """
         self.html = html
-        """ Raw html reponse
+        """ Html reponse
             :type : None | unicode """
         self.scraped = scraped
         """ Scrapped content
             :type : None | list | dict """
 
     def __repr__(self):
-        return "<Response ({}, {}, {})>".format(
-            self.cache_info, self.html, self.scraped
+        return "<Response ({}, {}, {}, {})>".format(
+            self.cache_info, self.html, self.scraped, self.raw
         )
 
     def __str__(self):
-        return "({}), {}, {}".format(self.cache_info, self.html, self.scraped)
+        return "({}), {}, {}, {}".format(
+            self.cache_info, self.html, self.scraped, self.raw
+        )
 
     def __unicode__(self):
         return self.__str__()
@@ -102,7 +107,8 @@ class Response(object):
         return {
             'cache_info': cache_info,
             'html': self.html,
-            'scraped': self.scraped
+            'scraped': self.scraped,
+            'raw': self.raw
         }
 
     @staticmethod
@@ -120,5 +126,6 @@ class Response(object):
         return Response(
             d.get('html'),
             CacheInfo.from_dict(d.get('cache_info')),
-            d.get('scraped')
+            d.get('scraped'),
+            d.get('raw')
         )
