@@ -57,10 +57,19 @@ class Cache(Loadable):
         if settings is None:
             settings = {}
         super(Cache, self).__init__(settings)
-        self.duration = datetime.timedelta(
-            seconds=settings.get('duration', 7 * 60)
-        )
+        self._duration = datetime.timedelta()
+        self.duration = settings.get('duration', 7 * 60)
         self.use_advanced = settings.get('use_advanced', True)
+
+    @property
+    def duration(self):
+        return self._duration
+
+    @duration.setter
+    def duration(self, value):
+        if not isinstance(value, datetime.timedelta):
+            value = datetime.timedelta(seconds=value)
+        self._duration = value
 
     def prepare_headers(self, headers, cache_info=None):
         """
