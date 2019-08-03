@@ -6,17 +6,17 @@ from __future__ import unicode_literals
 
 __author__ = "the01"
 __email__ = "jungflor@gmail.com"
-__copyright__ = "Copyright (C) 2017, Florian JUNG"
+__copyright__ = "Copyright (C) 2017-19, Florian JUNG"
 __license__ = "MIT"
-__version__ = "0.1.0"
-__date__ = "2017-11-03"
+__version__ = "0.1.1"
+__date__ = "2018-08-03"
 # Created: 2017-10-06 23:35
 
 
 class CacheInfo(object):
     """ Cache information """
 
-    def __init__(self, access_time=None, etag = None):
+    def __init__(self, access_time=None, etag=None):
         super(CacheInfo, self).__init__()
         self.etag = etag
         """ :type : None | str | unicode """

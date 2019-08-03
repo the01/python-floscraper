@@ -6,10 +6,10 @@ from __future__ import unicode_literals
 
 __author__ = "d01"
 __email__ = "jungflor@gmail.com"
-__copyright__ = "Copyright (C) 2017, Florian JUNG"
+__copyright__ = "Copyright (C) 2017-19, Florian JUNG"
 __license__ = "MIT"
-__version__ = "0.1.0"
-__date__ = "2017-10-07"
+__version__ = "0.2.0"
+__date__ = "2019-08-03"
 # Created: 2017-10-07 15:19
 
 import datetime
@@ -18,15 +18,14 @@ import abc
 import threading
 import logging
 import hashlib
-import codecs
+from io import open
 
 from flotils import Loadable
-from dateutil.tz import tzutc
 
 try:
     import portalocker as porta
 except ImportError:
-    # not using portalocker
+    # Not using portalocker
     porta = None
 
 from .models import CacheInfo
@@ -47,10 +46,11 @@ def now_utc():
     :return: Current time
     :rtype: datetime.datetime
     """
-    return datetime.datetime.utcnow().replace(tzinfo=tzutc())
+    return datetime.datetime.utcnow()
 
 
 class Cache(Loadable):
+    """ Cache element """
     __metaclass__ = abc.ABCMeta
 
     def __init__(self, settings=None):
@@ -126,7 +126,7 @@ class Cache(Loadable):
         accessed = self._cache_meta_get(key)
 
         if not accessed:
-            # not previously cached
+            # Not previously cached
             self.debug("From inet {}".format(url))
             return None, None
 
@@ -136,15 +136,15 @@ class Cache(Loadable):
             cached = CacheInfo(accessed)
         now = now_utc()
         if now - cached.access_time > self.duration and not ignore_access_time:
-            # cached expired -> remove
+            # Cached expired -> remove
             self.debug("From inet (expired) {}".format(url))
             return None, cached
 
         try:
             res = self._cache_get(key)
         except:
-            self.exception("Failed to read cache")
             self.debug("From inet (failure) {}".format(url))
+            self.exception("Failed to read cache")
             return None, None
         self.debug("From cache {}".format(url))
         return res, cached
@@ -232,7 +232,7 @@ class FileCache(Cache):
         if not self._index:
             if os.path.exists(self._index_path):
                 try:
-                    with open(self._index_path, 'rb') as f:
+                    with open(self._index_path, "rb") as f:
                         if porta:
                             porta.lock(f, porta.LOCK_EX)
                         self._index = self._load_json_file(f)
@@ -256,7 +256,7 @@ class FileCache(Cache):
 
     def _cache_get(self, key):
         tmp_path = os.path.join(self._dir, key + ".tmp")
-        with codecs.open(tmp_path, "rb", "utf-8") as f:
+        with open(tmp_path, "rb") as f:
             if porta:
                 porta.lock(f, porta.LOCK_EX)
             return f.read()
@@ -268,11 +268,11 @@ class FileCache(Cache):
 
     def _cache_set(self, key, val):
         tmp_path = os.path.join(self._dir, key + ".tmp")
-        with codecs.open(tmp_path, "wb", "utf-8") as f:
+        with open(tmp_path, "wb") as f:
             if porta:
                 porta.lock(f, porta.LOCK_EX)
             f.write(val)
-            # try flushing to make data available sooner
+            # Try flushing to make data available sooner
             # (try to get rid of erroneous reads)
             f.flush()
 
@@ -285,15 +285,16 @@ class FileCache(Cache):
 
         return super(FileCache, self).get(url, ignore_access_time)
 
-
     def put(self, url, html, cache_info=None):
         if not self._dir:
             return
         super(FileCache, self).put(url, html, cache_info)
 
-        # better in a close statement?
+        # Better in a close statement?
         try:
-            with open(self._index_path, "wb") as f, _cache_lock:
+            with open(
+                    self._index_path, "wb"
+            ) as f, _cache_lock:
                 if porta:
                     porta.lock(f, porta.LOCK_EX)
                 self._save_json_file(f, _cache)

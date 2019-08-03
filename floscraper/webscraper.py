@@ -9,10 +9,10 @@ from __future__ import unicode_literals
 
 __author__ = "the01"
 __email__ = "jungflor@gmail.com"
-__copyright__ = "Copyright (C) 2014-17, Florian JUNG"
+__copyright__ = "Copyright (C) 2014-19, Florian JUNG"
 __license__ = "MIT"
-__version__ = "0.1.9"
-__date__ = "2017-11-03"
+__version__ = "0.1.10"
+__date__ = "2019-08-03"
 # Created: 2014-04-02 11:23
 
 import re
@@ -76,7 +76,7 @@ class WebScraper(Loadable):
         self._auth_password = settings.get('auth_password', None)
 
         self.session = None
-        """ object to do http actions
+        """ Object to do http actions
             :type _br: requests.Session """
         self._handle_redirect = settings.get('handle_redirect', True)
 
@@ -100,12 +100,12 @@ class WebScraper(Loadable):
                 agent = agent_browser.format(agent_os)
         self.user_agent = agent
         self._text_maker = None
-        """ object to translate html to markdown (html2text)
+        """ Object to translate html to markdown (html2text)
             :type : None | html2text.HTML2Text """
         if settings.get('html2text'):
             self._set_html2text(settings['html2text'])
         self.html_parser = settings.get('html_parser', "html.parser")
-        """ what html parser to use (default: html.parser - built in)
+        """ What html parser to use (default: html.parser - built in)
             :type : str | unicode """
 
     def _browser_init(self):
