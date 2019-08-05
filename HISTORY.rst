@@ -3,6 +3,14 @@
 History
 =======
 
+0.3.1 (2019-08-04)
+---------------------
+
+* Fix __init__
+* Hashlib needs byte input
+* Cache hit/miss info
+
+
 0.3.0 (2019-08-03)
 ---------------------
 

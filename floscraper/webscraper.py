@@ -11,8 +11,8 @@ __author__ = "the01"
 __email__ = "jungflor@gmail.com"
 __copyright__ = "Copyright (C) 2014-19, Florian JUNG"
 __license__ = "MIT"
-__version__ = "0.1.10"
-__date__ = "2019-08-03"
+__version__ = "0.1.11"
+__date__ = "2019-08-04"
 # Created: 2014-04-02 11:23
 
 import re
@@ -300,9 +300,14 @@ class WebScraper(Loadable):
             if cache_info.etag != cache_ext.etag:
                 cached = None
                 cache_info = cache_ext
+
         if cached:
             # Using cached
+            if cache_info:
+                cache_info.hit = True
             return Response(cached, cache_info)
+        if cache_info:
+            cache_info.hit = None
         # Not using cached
 
         if not self.session:
@@ -323,6 +328,8 @@ class WebScraper(Loadable):
             cache_info.etag = response.headers.get('etag')
 
         res = Response(cache_info=cache_info)
+        if cache_info:
+            cache_info.hit = False
 
         if response.history:
             # list of responses in redirects
@@ -349,6 +356,8 @@ class WebScraper(Loadable):
         if response.status_code == requests.codes.NOT_MODIFIED:
             self.info("Not modified {}".format(url))
             res.html, _ = self.cache.get(url, ignore_access_time=True)
+            if cache_info:
+                cache_info.hit = True
             if self.cache:
                 self.cache.update(url, cache_info)
             return res
@@ -470,9 +479,9 @@ class WebScraper(Loadable):
 
         for match in eles:
             if val_type == "text":
-                val.append(unicode(match.getText()))
+                val.append("{}".format(match.getText()))
             elif val_type == "content":
-                val.append(unicode(match.getText()))
+                val.append("{}".format(match.getText()))
             elif val_type == "attribute" and value_scheme.get("attribute", None):
                 attr = value_scheme['attribute']
 
@@ -484,13 +493,13 @@ class WebScraper(Loadable):
                         res = " ".join(res)
                     val.append(res)
             elif val_type == "html":
-                val.append(unicode(match))
+                val.append("{}".format(match))
             else:
                 # == html2text
                 if self._text_maker is None:
-                    val.append(html2text.html2text(unicode(match)))
+                    val.append(html2text.html2text("{}".format(match)))
                 else:
-                    val.append(self._text_maker.handle(unicode(match)))
+                    val.append(self._text_maker.handle("{}".format(match)))
             if strip:
                 # TODO: github date field
                 val[-1] = val[-1].strip()
@@ -514,7 +523,7 @@ class WebScraper(Loadable):
         :param ele:
         :type ele:
         :param scheme:
-        :type scheme: dict[str |unicode, dict]
+        :type scheme: dict[str | unicode, dict]
         :return:
         :rtype: dict
         """

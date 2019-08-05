@@ -8,12 +8,14 @@ __author__ = "the01"
 __email__ = "jungflor@gmail.com"
 __copyright__ = "Copyright (C) 2017-19, Florian JUNG"
 __license__ = "MIT"
-__version__ = "0.1.1"
-__date__ = "2018-08-03"
+__version__ = "0.1.2"
+__date__ = "2018-08-04"
 # Created: 2017-10-06 23:35
 
+import flotils
 
-class CacheInfo(object):
+
+class CacheInfo(flotils.FromToDictBase, flotils.PrintableBase):
     """ Cache information """
 
     def __init__(self, access_time=None, etag=None):
@@ -22,49 +24,12 @@ class CacheInfo(object):
         """ :type : None | str | unicode """
         self.access_time = access_time
         """ :type : None | datetime.datetime """
-
-    def __repr__(self):
-        return "<CacheInfo ({}, {})>".format(
-            self.access_time, self.etag
-        )
-
-    def __str__(self):
-        return "{}, {}".format(self.access_time, self.etag)
-
-    def __unicode__(self):
-        return self.__str__()
-
-    def to_dict(self):
-        """
-        CacheInfo as dict
-
-        :return: cache info
-        :rtype: dict
-        """
-        return {
-            'access_time': self.access_time,
-            'etag': self.etag
-        }
-
-    @staticmethod
-    def from_dict(d):
-        """
-        CacheInfo from dict
-
-        :param d: Dict to load
-        :type d: dict
-        :return: cache info
-        :rtype: CacheInfo
-        """
-        if d is None:
-            return None
-        return CacheInfo(
-            d.get('access_time'),
-            d.get('etag')
-        )
+        self.hit = None
+        """ Cache hit
+            :type : None | bool """
 
 
-class Response(object):
+class Response(flotils.FromToDictBase, flotils.PrintableBase):
     """ Scrapper response object """
 
     def __init__(self, html=None, cache_info=None, scraped=None, raw=None):
@@ -81,18 +46,10 @@ class Response(object):
         """ Scrapped content
             :type : None | list | dict """
 
-    def __repr__(self):
-        return "<Response ({}, {}, {}, {})>".format(
-            self.cache_info, self.html, self.scraped, self.raw
-        )
-
     def __str__(self):
         return "({}), {}, {}, {}".format(
             self.cache_info, self.html, self.scraped, self.raw
         )
-
-    def __unicode__(self):
-        return self.__str__()
 
     def to_dict(self):
         """
@@ -101,15 +58,11 @@ class Response(object):
         :return: response
         :rtype: dict
         """
-        cache_info = None
+        res = super(Response, self).to_dict()
+
         if self.cache_info:
-            cache_info = self.cache_info.to_dict()
-        return {
-            'cache_info': cache_info,
-            'html': self.html,
-            'scraped': self.scraped,
-            'raw': self.raw
-        }
+            res['cache_info'] = self.cache_info.to_dict()
+        return res
 
     @staticmethod
     def from_dict(d):

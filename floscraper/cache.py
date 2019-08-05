@@ -8,8 +8,8 @@ __author__ = "d01"
 __email__ = "jungflor@gmail.com"
 __copyright__ = "Copyright (C) 2017-19, Florian JUNG"
 __license__ = "MIT"
-__version__ = "0.2.0"
-__date__ = "2019-08-03"
+__version__ = "0.2.1"
+__date__ = "2019-08-04"
 # Created: 2017-10-07 15:19
 
 import datetime
@@ -122,7 +122,7 @@ class Cache(Loadable):
             data, CacheInfo -> found in cache
         :rtype: (None | str | unicode, None | floscraper.models.CacheInfo)
         """
-        key = hashlib.md5(url).hexdigest()
+        key = hashlib.md5(url.encode("utf-8")).hexdigest()
         accessed = self._cache_meta_get(key)
 
         if not accessed:
@@ -159,7 +159,7 @@ class Cache(Loadable):
         :type cache_info: floscraper.models.CacheInfo
         :rtype: None
         """
-        key = hashlib.md5(url).hexdigest()
+        key = hashlib.md5(url.encode("utf-8")).hexdigest()
         access_time = None
         if not cache_info:
             cache_info = CacheInfo()
@@ -179,7 +179,7 @@ class Cache(Loadable):
         :type cache_info: floscraper.models.CacheInfo
         :rtype: None
         """
-        key = hashlib.md5(url).hexdigest()
+        key = hashlib.md5(url.encode("utf-8")).hexdigest()
 
         try:
             self._cache_set(key, html)
@@ -232,7 +232,7 @@ class FileCache(Cache):
         if not self._index:
             if os.path.exists(self._index_path):
                 try:
-                    with open(self._index_path, "rb") as f:
+                    with open(self._index_path, "r", encoding="utf-8") as f:
                         if porta:
                             porta.lock(f, porta.LOCK_EX)
                         self._index = self._load_json_file(f)
@@ -256,7 +256,7 @@ class FileCache(Cache):
 
     def _cache_get(self, key):
         tmp_path = os.path.join(self._dir, key + ".tmp")
-        with open(tmp_path, "rb") as f:
+        with open(tmp_path, "r", encoding="utf-8") as f:
             if porta:
                 porta.lock(f, porta.LOCK_EX)
             return f.read()
@@ -268,7 +268,7 @@ class FileCache(Cache):
 
     def _cache_set(self, key, val):
         tmp_path = os.path.join(self._dir, key + ".tmp")
-        with open(tmp_path, "wb") as f:
+        with open(tmp_path, "w", encoding="utf-8") as f:
             if porta:
                 porta.lock(f, porta.LOCK_EX)
             f.write(val)
@@ -293,7 +293,7 @@ class FileCache(Cache):
         # Better in a close statement?
         try:
             with open(
-                    self._index_path, "wb"
+                    self._index_path, "w", encoding="utf-8"
             ) as f, _cache_lock:
                 if porta:
                     porta.lock(f, porta.LOCK_EX)
